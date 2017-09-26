@@ -1,14 +1,10 @@
 package us.ilmir
 
 import org.objectweb.asm.ClassReader
-import org.objectweb.asm.ClassVisitor
-import org.objectweb.asm.MethodVisitor
-import org.objectweb.asm.Opcodes.ASM5
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.ClassNode
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
-import java.util.*
 import kotlin.collections.ArrayList
 
 const private val SUPPORT_COMPAT = "support-compat-26.1.0.aar"
@@ -18,34 +14,19 @@ private class MethodInfo(
         val access: Int,
         val name: String,
         val returnType: Type,
-        val argTypes: List<String>,
-        val exceptions: List<String>
+        val argTypes: List<Type>,
+        val desc: String
 )
 
 private class ClassFile(val name: String, val content: ByteArray) {
-    fun methods(): List<MethodInfo> {
-        val res = arrayListOf<MethodInfo>()
-        val reader = ClassReader(content.inputStream())
-        reader.accept(object : ClassVisitor(ASM5) {
-            override fun visitMethod(
-                    access: Int,
-                    name: String?,
-                    desc: String?,
-                    signature: String?,
-                    exceptions: Array<out String>?
-            ): MethodVisitor? {
-                if (name == null) return null
-                res.add(MethodInfo(
-                        access,
-                        name,
-                        Type.getReturnType(desc),
-                        parseArgumentTypes(signature ?: ""),
-                        exceptions?.toList() ?: emptyList())
-                )
-                return super.visitMethod(access, name, desc, signature, exceptions)
-            }
-        }, 0)
-        return res
+    fun methods(): List<MethodInfo> = classNode().methods.map {
+        MethodInfo(
+                it.access,
+                it.name,
+                Type.getReturnType(it.desc),
+                Type.getArgumentTypes(it.desc).toList(),
+                it.desc
+        )
     }
 
     fun type(): String = classNode().name
@@ -55,37 +36,12 @@ private class ClassFile(val name: String, val content: ByteArray) {
         reader.accept(cn, 0)
         return cn
     }
-
-    private fun parseArgumentTypes(signature: String): List<String> {
-        if (!signature.contains(')') || !signature.contains('(')) {
-            return emptyList()
-        }
-        var remainingTypes = signature.substring(signature.indexOf('(') + 1, signature.lastIndexOf(')'))
-        assert(remainingTypes.isNotEmpty())
-        val res = arrayListOf<String>()
-        while (remainingTypes.isNotEmpty() && remainingTypes.contains(';')) {
-            var parens = 0
-            for (i in remainingTypes.indices) {
-                if (remainingTypes[i] == '<') parens++
-                else if (remainingTypes[i] == '>') {
-                    assert(parens > 0);
-                    parens--
-                } else if (remainingTypes[i] == ';') {
-                    if (parens == 0) {
-                        res += remainingTypes.substring(0, i)
-                        remainingTypes = remainingTypes.substring(i + 1)
-                        break
-                    }
-                }
-            }
-        }
-        if (remainingTypes.isNotEmpty()) res += remainingTypes
-        return res
-    }
 }
 
 private class Inconsistency(
         val methodName: String,
+        val originDesc: String,
+        val compatDesc: String,
         val reason: Inconsistency.Reason
 ) {
     enum class Reason(val s: String) {
@@ -99,7 +55,9 @@ private class Inconsistency(
         EMPTY_PARAMS("Empty params on compat")
     }
 
-    override fun toString() = "$methodName: ${reason.s}"
+    override fun toString() = "$methodName: ${reason.s}. Compat: $compatDesc${printOrigin()}"
+
+    private fun printOrigin() = if (originDesc.isEmpty()) "" else ", Origin: $originDesc"
 }
 
 fun <K, T> List<T>.toMap(op: (T) -> K): Map<K, List<T>> {
@@ -122,12 +80,21 @@ private class OriginAndCompat(val origin: ClassFile, val compat: ClassFile) {
                 continue
             }
             val originOverloads = originInfos[name]
-            fun found(reason: Inconsistency.Reason) = Inconsistency(name, reason)
             when {
                 originOverloads == null ->
-                    res += found(Inconsistency.Reason.NO_ORIGIN_COMPANION)
+                    res += Inconsistency(
+                            name,
+                            "",
+                            compatOverloads[0].desc,
+                            Inconsistency.Reason.NO_ORIGIN_COMPANION
+                    )
                 originOverloads.size < compatOverloads.size ->
-                    res += found(Inconsistency.Reason.TOO_FEW_ORIGIN_COMPANIONS)
+                    res += Inconsistency(
+                            name,
+                            originOverloads[0].desc,
+                            compatOverloads[0].desc,
+                            Inconsistency.Reason.TOO_FEW_ORIGIN_COMPANIONS
+                    )
                 else -> res += checkOverloads(name, originOverloads, compatOverloads)
             }
         }
@@ -135,17 +102,31 @@ private class OriginAndCompat(val origin: ClassFile, val compat: ClassFile) {
     }
 
     private fun checkOverloads(name: String, originOverloads: List<MethodInfo>, compatOverloads: List<MethodInfo>): List<Inconsistency> {
-        fun found(reason: Inconsistency.Reason) = Inconsistency(name, reason)
         val res = arrayListOf<Inconsistency>()
         for (compatInfo in compatOverloads) {
             when {
                 compatInfo.argTypes.isEmpty() ->
-                    res += found(Inconsistency.Reason.EMPTY_PARAMS)
-                compatInfo.argTypes[0] != origin.type() ->
-                    res += found(Inconsistency.Reason.NOT_ORIGIN_ON_FIRST_PARAM)
+                    res += Inconsistency(
+                            name,
+                            originOverloads[0].desc,
+                            compatInfo.desc,
+                            Inconsistency.Reason.EMPTY_PARAMS
+                    )
+                compatInfo.argTypes[0].toString() != origin.type() ->
+                    res += Inconsistency(
+                            name,
+                            "",
+                            compatInfo.desc,
+                            Inconsistency.Reason.NOT_ORIGIN_ON_FIRST_PARAM
+                    )
                 else -> {
                     val originInfo = originOverloads.find { it.argTypes == compatInfo.argTypes.rest() }
-                    if (originInfo == null) res += found(Inconsistency.Reason.DIFFERENT_PARAMS)
+                    if (originInfo == null) res += Inconsistency(
+                            name,
+                            originOverloads[0].desc,
+                            compatInfo.desc,
+                            Inconsistency.Reason.DIFFERENT_PARAMS
+                    )
                     else {
                         val inc = compareMethods(name, originInfo, compatInfo)
                         if (inc != null) res += inc
@@ -156,12 +137,21 @@ private class OriginAndCompat(val origin: ClassFile, val compat: ClassFile) {
         return res
     }
 
-    private fun compareMethods(name: String, originInfo: MethodInfo, compatInfo: MethodInfo): Inconsistency? {
-        fun found(reason: Inconsistency.Reason) = Inconsistency(name, reason)
-        if (compatInfo.access != originInfo.access) return found(Inconsistency.Reason.DIFFERENT_ACCESS)
-        if (compatInfo.returnType.toString().replace("Compat", "") != compatInfo.returnType.toString())
-            return found(Inconsistency.Reason.DIFFERENT_RETURN_TYPE)
-        return null
+    private fun compareMethods(name: String, originInfo: MethodInfo, compatInfo: MethodInfo) = when {
+        compatInfo.access != originInfo.access -> Inconsistency(
+                name,
+                originInfo.desc,
+                compatInfo.desc,
+                Inconsistency.Reason.DIFFERENT_ACCESS
+        )
+        compatInfo.returnType.toString().replace("Compat", "") != compatInfo.returnType.toString() ->
+            Inconsistency(
+                    name,
+                    originInfo.desc,
+                    compatInfo.desc,
+                    Inconsistency.Reason.DIFFERENT_RETURN_TYPE
+            )
+        else -> null
     }
 }
 
