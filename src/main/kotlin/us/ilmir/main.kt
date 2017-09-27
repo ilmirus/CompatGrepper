@@ -1,8 +1,10 @@
 package us.ilmir
 
 import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.MethodNode
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import kotlin.collections.ArrayList
@@ -11,25 +13,27 @@ const private val SUPPORT_COMPAT = "support-compat-26.1.0.aar"
 const private val ANDROID_JAR = "android.jar"
 
 private class MethodInfo(
-        val access: Int,
         val name: String,
         val returnType: Type,
         val argTypes: List<Type>,
-        val desc: String
+        val desc: String,
+        val isStatic: Boolean
 )
 
 private class ClassFile(val name: String, val content: ByteArray) {
-    fun methods(): List<MethodInfo> = classNode().methods.map {
-        MethodInfo(
-                it.access,
-                it.name,
-                Type.getReturnType(it.desc),
-                Type.getArgumentTypes(it.desc).toList(),
-                it.desc
-        )
-    }
+    fun methods(): List<MethodInfo> = classNode().methods
+            .filter { it.access and Opcodes.ACC_PUBLIC != 0 }
+            .map {
+                MethodInfo(
+                        it.name,
+                        Type.getReturnType(it.desc),
+                        Type.getArgumentTypes(it.desc).toList(),
+                        it.desc,
+                        it.isStatic
+                )
+            }
 
-    fun type(): String = classNode().name
+    fun type(): String = "L${classNode().name};"
     private fun classNode(): ClassNode {
         val cn = ClassNode()
         val reader = ClassReader(content.inputStream())
@@ -38,6 +42,13 @@ private class ClassFile(val name: String, val content: ByteArray) {
     }
 }
 
+private val MethodNode.isStatic
+    get() = when {
+        this.localVariables == null -> true
+        this.localVariables.isEmpty() -> true
+        else -> this.localVariables[0].name != "this"
+    }
+
 private class Inconsistency(
         val methodName: String,
         val originDesc: String,
@@ -45,7 +56,6 @@ private class Inconsistency(
         val reason: Inconsistency.Reason
 ) {
     enum class Reason(val s: String) {
-        DIFFERENT_ACCESS("Different access"),
         NOT_ORIGIN_ON_FIRST_PARAM("Not origin on first param"),
         NO_ORIGIN_COMPANION("No origin companion"),
         TOO_FEW_ORIGIN_COMPANIONS("Too few origin companions"),
@@ -75,8 +85,12 @@ private class OriginAndCompat(val origin: ClassFile, val compat: ClassFile) {
         val compatInfos = compat.methods().toMap { it.name }
         val originInfos = origin.methods().toMap { it.name }
         val res = arrayListOf<Inconsistency>()
-        for ((name, compatOverloads) in compatInfos) {
+        for ((name, tmp) in compatInfos) {
             if (name.contains("<")) {
+                continue
+            }
+            val compatOverloads = tmp.filter { it.isStatic }
+            if (compatOverloads.isEmpty()) {
                 continue
             }
             val originOverloads = originInfos[name]
@@ -138,12 +152,6 @@ private class OriginAndCompat(val origin: ClassFile, val compat: ClassFile) {
     }
 
     private fun compareMethods(name: String, originInfo: MethodInfo, compatInfo: MethodInfo) = when {
-        compatInfo.access != originInfo.access -> Inconsistency(
-                name,
-                originInfo.desc,
-                compatInfo.desc,
-                Inconsistency.Reason.DIFFERENT_ACCESS
-        )
         compatInfo.returnType.toString().replace("Compat", "") != compatInfo.returnType.toString() ->
             Inconsistency(
                     name,
@@ -181,24 +189,35 @@ private fun findCompats(): List<ClassFile> {
 }
 
 private fun findCompatOrigins(compatNames: List<String>): List<ClassFile> {
-    val strippedNames = compatNames.map {
+    var strippedNames = compatNames.map {
         it.substring(it.lastIndexOf('/'))
                 .replace("Compat.class", ".class")
                 .replace("Compat$", "$")
     }
+    strippedNames += strippedNames.map { it.replace('/', '$') }
     val res = arrayListOf<ClassFile>()
     val stream = ClassFile::class.java.classLoader.getResourceAsStream(ANDROID_JAR)
     val zis = ZipInputStream(stream)
     var entry: ZipEntry? = zis.nextEntry
     while (entry != null) {
-        val startIndex = entry.name.lastIndexOf('/')
+        var startIndex = entry.name.lastIndexOf('/')
         if (startIndex < 0) {
             entry = zis.nextEntry
             continue
         }
-        val name = entry.name.substring(startIndex)
+        var name = entry.name.substring(startIndex)
         if (strippedNames.contains(name)) {
             res.add(ClassFile(entry.name, zis.readBytes(entry.size.toInt())))
+        } else {
+            startIndex = entry.name.lastIndexOf('$')
+            if (startIndex < 0) {
+                entry = zis.nextEntry
+                continue
+            }
+            name = entry.name.substring(startIndex)
+            if (strippedNames.contains(name)) {
+                res.add(ClassFile(entry.name, zis.readBytes(entry.size.toInt())))
+            }
         }
         entry = zis.nextEntry
     }
@@ -211,11 +230,15 @@ private fun combine(origins: List<ClassFile>, compats: List<ClassFile>): Pair<Li
     val res = arrayListOf<OriginAndCompat>()
     val alones = arrayListOf<ClassFile>()
     for (compat in compats) {
-        val stripped = compat.name
+        var stripped = compat.name
                 .substring(compat.name.lastIndexOf('/'))
                 .replace("Compat.class", ".class")
                 .replace("Compat$", "$")
-        val origin = origins.find { it.name.endsWith(stripped) }
+        var origin = origins.find { it.name.endsWith(stripped) }
+        if (origin == null) {
+            stripped = stripped.replace('/', '$')
+            origin = origins.find { it.name.endsWith(stripped) }
+        }
         if (origin == null) alones += compat
         else res += OriginAndCompat(origin, compat)
     }
