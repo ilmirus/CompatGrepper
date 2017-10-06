@@ -3,8 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/CompatGrepper.iml" filepath="$PROJECT_DIR$/.idea/modules/CompatGrepper.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/CompatGrepper_main.iml" filepath="$PROJECT_DIR$/.idea/modules/CompatGrepper_main.iml" group="CompatGrepper" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/CompatGrepper_test.iml" filepath="$PROJECT_DIR$/.idea/modules/CompatGrepper_test.iml" group="CompatGrepper" />
     </modules>
   </component>
 </project>

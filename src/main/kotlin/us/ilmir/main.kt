@@ -2,7 +2,9 @@ package us.ilmir
 
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.objectweb.asm.tree.AnnotationNode
 import org.objectweb.asm.tree.MethodNode
+import java.io.FileOutputStream
 import kotlin.collections.ArrayList
 
 const private val SUPPORT_COMPAT = "support-compat-26.1.0.aar"
@@ -57,7 +59,7 @@ private class Inconsistency(
     private fun printOrigin() = if (originDesc.isEmpty()) "" else ", Origin: $originDesc"
 }
 
-fun <K, T> List<T>.toMap(op: (T) -> K): Map<K, List<T>> {
+private fun <K, T> List<T>.toMap(op: (T) -> K): Map<K, List<T>> {
     val res = hashMapOf<K, ArrayList<T>>()
     for (item in this) {
         val key = op(item)
@@ -209,6 +211,12 @@ fun main(args: Array<String>) {
     for (alone in alones) {
         println("Alone compat: ${alone.path}")
     }
+    for (oac in oacs) {
+        oac.origin.addAnnotation("Lkotlin/android/Compat;", hashMapOf("value" to Type.getType(oac.compat.type())))
+    }
+    val fos = FileOutputStream(ANDROID_JAR)
+    fos.write(ClassFile::class.java.classLoader.getResourceAsStream(ANDROID_JAR).replaceClassesInJar(oacs.map { it.origin }))
+    fos.close()
     val res = oacs.map { Triple(it.origin.path, it.compat.path, it.findInconsistencies()) }
     for ((origin, compat, inconsistencies) in res) {
         if (inconsistencies.isNotEmpty()) println("$origin $compat:")
