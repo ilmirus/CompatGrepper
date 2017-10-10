@@ -32,103 +32,21 @@ class ClassFile(val path: String, var content: ByteArray) {
         val reader = ClassReader(content)
         val writer = ClassWriter(reader,0)
         reader.accept(cn, 0)
-//        val annotation = AnnotationNode(name)
-//        if (annotation.values == null && params.isNotEmpty()) annotation.values = arrayListOf()
-//        for ((paramName, paramValue) in params) {
-//            annotation.values.add(paramName)
-//            annotation.values.add(paramValue)
-//        }
-//        if (visible) {
-//            if (cn.visibleAnnotations == null) cn.visibleAnnotations = arrayListOf()
-//            cn.visibleAnnotations.add(annotation)
-//        } else {
-//            if (cn.invisibleAnnotations == null) cn.invisibleAnnotations = arrayListOf()
-//            cn.invisibleAnnotations.add(annotation)
-//        }
-//        annotation.check(Opcodes.ASM5)
-        cn.writeClass(writer, name, params, visible)
-        content = writer.toByteArray()
-        CheckClassAdapter.verify(ClassReader(content), classLoader, false, PrintWriter(System.out))
-    }
-
-    private fun ClassNode.writeClass(cv: ClassWriter, annotationName: String, params: HashMap<String, Any> = hashMapOf(), visible: Boolean = false) {
-        // visits header
-        val interfaces = this.interfaces.toTypedArray()
-        cv.visit(version, access, name, signature, superName, interfaces)
-        // visits source
-        if (sourceFile != null || sourceDebug != null) cv.visitSource(sourceFile, sourceDebug)
-        // visits outer class
-        if (outerClass != null) cv.visitOuterClass(outerClass, outerMethod, outerMethodDesc)
-        // visits attributes
-        var i = 0
-        var n = if (visibleAnnotations == null) 0 else visibleAnnotations.size
-        while (i < n) {
-            val an = visibleAnnotations[i]
-            an.accept(cv.visitAnnotation(an.desc, true))
-            ++i
+        val annotation = AnnotationNode(name)
+        if (annotation.values == null && params.isNotEmpty()) annotation.values = arrayListOf()
+        for ((paramName, paramValue) in params) {
+            annotation.values.add(paramName)
+            annotation.values.add(paramValue)
         }
         if (visible) {
-            val av = cv.visitAnnotation(annotationName, visible)
-            for ((paramName, paramValue) in params) av.visit(paramName, paramValue)
-            av.visitEnd()
+            if (cn.visibleAnnotations == null) cn.visibleAnnotations = arrayListOf()
+            cn.visibleAnnotations.add(annotation)
+        } else {
+            if (cn.invisibleAnnotations == null) cn.invisibleAnnotations = arrayListOf()
+            cn.invisibleAnnotations.add(annotation)
         }
-        n = if (invisibleAnnotations == null) 0 else invisibleAnnotations.size
-        i = 0
-        while (i < n) {
-            val an = invisibleAnnotations[i]
-            an.accept(cv.visitAnnotation(an.desc, false))
-            ++i
-        }
-        if (!visible) {
-            val av = cv.visitAnnotation(annotationName, visible)
-            for ((paramName, paramValue) in params) av.visit(paramName, paramValue)
-            av.visitEnd()
-        }
-        n = if (visibleTypeAnnotations == null) 0 else visibleTypeAnnotations.size
-        i = 0
-        while (i < n) {
-            val an = visibleTypeAnnotations[i]
-            an.accept(cv.visitTypeAnnotation(an.typeRef, an.typePath, an.desc,
-                    true))
-            ++i
-        }
-        n = if (invisibleTypeAnnotations == null) 0 else invisibleTypeAnnotations.size
-        i = 0
-        while (i < n) {
-            val an = invisibleTypeAnnotations[i]
-            an.accept(cv.visitTypeAnnotation(an.typeRef, an.typePath, an.desc, false))
-            ++i
-        }
-        n = if (attrs == null) 0 else attrs.size
-        i = 0
-        while (i < n) {
-            cv.visitAttribute(attrs[i])
-            ++i
-        }
-        // visits inner classes
-        i = 0
-        while (i < innerClasses.size) {
-            innerClasses[i].accept(cv)
-            ++i
-        }
-        // visits fields
-        i = 0
-        while (i < fields.size) {
-            fields[i].accept(cv)
-            ++i
-        }
-        // visits methods
-        i = 0
-        while (i < methods.size) {
-            methods[i].accept(cv)
-            ++i
-        }
-        // visits end
-        cv.visitEnd()
-    }
-
-    companion object {
-        val classLoader = URLClassLoader(arrayOf(ClassFile::class.java.classLoader.getResource("android.jar")), ClassFile::class.java.classLoader)
+        cn.accept(writer)
+        content = writer.toByteArray()
     }
 }
 

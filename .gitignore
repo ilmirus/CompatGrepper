@@ -8,3 +8,6 @@
 /out
 /captures
 .externalNativeBuild
+android.jar
+.idea/inspectionProfiles/
+.idea/modules/
