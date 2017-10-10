@@ -1,7 +1,8 @@
 buildscript {
-    ext.kotlin_version = '1.1.51'
+    ext.kotlin_version = '1.1-SNAPSHOT'
 
     repositories {
+        maven { url 'file:///home/user/work/kotlin/build/repo' }
         jcenter()
     }
     dependencies {
@@ -15,6 +16,7 @@ version '1.0-SNAPSHOT'
 apply plugin: 'kotlin'
 
 repositories {
+    maven { url 'file:///home/user/work/kotlin/build/repo' }
     jcenter()
 }
 
@@ -25,7 +27,7 @@ sourceSets {
 }
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-stdlib-jre8:$kotlin_version"
+    compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     compile group: 'org.ow2.asm', name: 'asm-debug-all', version: '5.2'
 }
 
