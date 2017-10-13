@@ -11,3 +11,4 @@
 android.jar
 .idea/inspectionProfiles/
 .idea/modules/
+!src/main/resources
