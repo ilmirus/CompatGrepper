@@ -7,12 +7,9 @@ import org.objectweb.asm.signature.SignatureReader
 import org.objectweb.asm.tree.AnnotationNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
-import org.objectweb.asm.util.CheckClassAdapter
 import org.objectweb.asm.util.TraceSignatureVisitor
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.io.PrintWriter
-import java.net.URLClassLoader
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -26,6 +23,8 @@ class ClassFile(val path: String, var content: ByteArray) {
     }
 
     fun type(): String = "L${classNode().name};"
+
+    fun name(): String = classNode().name.replace('/', '.')
 
     fun addAnnotation(name: String, params: HashMap<String, Any> = hashMapOf(), visible: Boolean = false) {
         val cn = ClassNode(Opcodes.ASM4)
@@ -94,7 +93,7 @@ fun InputStream.replaceClassesInJar(newClasses: List<ClassFile>): ByteArray {
         entry = zis.nextEntry
     }
     zos.close()
-    return res.toByteArray()
+    return res.toByteArray().inputStream().addClassesToJar(emptyList())
 }
 
 fun InputStream.addClassesToJar(newClasses: List<ClassFile>): ByteArray {

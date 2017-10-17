@@ -9,7 +9,6 @@ import kotlin.collections.ArrayList
 
 const private val SUPPORT_COMPAT = "support-compat-26.1.0.aar"
 const private val ANDROID_JAR = "android.jar"
-const private val KOTLIN_STDLIB = "kotlin-stdlib-1.1-20171009.095449-1.jar"
 
 private class MethodInfo(
         val name: String,
@@ -209,18 +208,11 @@ fun main(args: Array<String>) {
                 .forEach { println("Generic method: ${compat.path} ${it.desc}") }
     }
     val (oacs, alones) = combine(origins, compats)
-    for (alone in alones) {
-        println("Alone compat: ${alone.path}")
+    alones.forEach { println("Alone compat: ${it.path}") }
+    oacs.forEach { it.origin.addAnnotation("Lkotlin/android/Compat;", hashMapOf("value" to Type.getType(it.compat.type()))) }
+    FileOutputStream(ANDROID_JAR).use {
+        it.write(ClassFile::class.java.classLoader.getResourceAsStream(ANDROID_JAR).replaceClassesInJar(oacs.map { it.origin }))
     }
-    for (oac in oacs) {
-        oac.origin.addAnnotation("Lkotlin/android/Compat;", hashMapOf("value" to Type.getType(oac.compat.type())))
-    }
-    val fos = FileOutputStream(ANDROID_JAR)
-    val annotatedJar = ClassFile::class.java.classLoader.getResourceAsStream(ANDROID_JAR).replaceClassesInJar(oacs.map { it.origin })
-    val compatAnnotation = ClassFile::class.java.classLoader.getResourceAsStream(KOTLIN_STDLIB).classFiles().find { it.path.endsWith("/Compat.class") }!!
-    val withCompats = annotatedJar.inputStream().addClassesToJar(oacs.map { it.compat } + compatAnnotation)
-    fos.write(withCompats)
-    fos.close()
     val res = oacs.map { Triple(it.origin.path, it.compat.path, it.findInconsistencies()) }
     for ((origin, compat, inconsistencies) in res) {
         if (inconsistencies.isNotEmpty()) println("$origin $compat:")
