@@ -209,7 +209,7 @@ fun main(args: Array<String>) {
     }
     val (oacs, alones) = combine(origins, compats)
     alones.forEach { println("Alone compat: ${it.path}") }
-    oacs.forEach { it.origin.addAnnotation("Lkotlin/android/Compat;", hashMapOf("value" to Type.getType(it.compat.type()))) }
+    oacs.forEach { it.origin.addAnnotation("Lkotlin/annotations/jvm/internal/Compat;", hashMapOf("value" to it.compat.name())) }
     FileOutputStream(ANDROID_JAR).use {
         it.write(ClassFile::class.java.classLoader.getResourceAsStream(ANDROID_JAR).replaceClassesInJar(oacs.map { it.origin }))
     }
